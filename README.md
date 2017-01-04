@@ -4,6 +4,7 @@ Proof-of-Concept exploit for Edge bugs (CVE-2016-7200 & CVE-2016-7201)
 Tested on Windows 10 Edge (modern.ie stable).
 
 FillFromPrototypes\_TypeConfusion.html: WinExec notepad.exe
+
 FillFromPrototypes\_TypeConfusion\_NoSC.html: 0xcc (INT 3)
 
 ### To run
